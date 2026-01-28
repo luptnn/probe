@@ -16,4 +16,4 @@ sed -i 's/\r$//' install-fail2ban.sh
 
 chmod +x install-fail2ban.sh
 
-bash install-fail2ban.sh
+./install-fail2ban.sh
