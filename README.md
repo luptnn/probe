@@ -7,7 +7,12 @@ alpine:
 apk add procps iproute2 coreutils
 
 fail2ban install
+
 wget https://raw.githubusercontent.com/luptnn/probe/refs/heads/main/install-fail2ban.sh
+
+#使用 sed 快速修复执行命令直接删掉脚本中的 Windows 换行符：
+
+sed -i 's/\r$//' install-fail2ban.sh
 
 chmod +x install-fail2ban.sh
 
