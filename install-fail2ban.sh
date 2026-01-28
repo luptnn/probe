@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# 检查 root 权限
+# --- 权限检查 ---
 if [ "$EUID" -ne 0 ]; then 
   echo "错误：请以 root 权限运行此脚本。"
   exit 1
 fi
 
-# 检查操作系统
+# --- 系统检测 ---
 if [ -f /etc/alpine-release ]; then
     OS="Alpine"
 elif [ -f /etc/debian_version ]; then
@@ -17,23 +17,19 @@ fi
 
 # --- 函数：安装与修复 ---
 install_f2b() {
-    echo "--- 1. 设置参数 (直接回车使用 24h, 60m, 3) ---"
-    
+    echo "--- 配置封禁参数 (直接回车使用 24h, 60m, 3) ---"
     read -p "请输入封禁时长 BANTIME [默认 24h]: " USER_BANTIME
     BANTIME=${USER_BANTIME:-"24h"}
-
     read -p "请输入检测时长 FINDTIME [默认 60m]: " USER_FINDTIME
     FINDTIME=${USER_FINDTIME:-"60m"}
-
     read -p "请输入最大尝试次数 MAXRETRY [默认 3]: " USER_MAXRETRY
     MAXRETRY=${USER_MAXRETRY:-3}
 
-    echo "--- 2. 清理可能冲突的旧配置 ---"
-    # 删除可能导致覆盖的旧 jail.local 和其他碎片配置
+    echo "--- 正在清理可能冲突的旧配置 ---"
     rm -f /etc/fail2ban/jail.local
     rm -f /etc/fail2ban/jail.d/*.conf
 
-    echo "--- 3. 安装/更新必要组件 ---"
+    echo "--- 正在安装/更新组件 ---"
     if [ "$OS" = "Alpine" ]; then
         apk update && apk add fail2ban iptables ipset
         rc-update add fail2ban default
@@ -45,8 +41,7 @@ install_f2b() {
         [ -f /var/log/auth.log ] && { LOG_PATH="/var/log/auth.log"; BACKEND="auto"; } || { LOG_PATH=""; BACKEND="systemd"; }
     fi
 
-    echo "--- 4. 写入新配置 ---"
-    # 显式地在 [DEFAULT] 和 [sshd] 中都声明一遍以防万一
+    echo "--- 写入新配置并强制覆盖 ---"
     cat <<EOF > /etc/fail2ban/jail.local
 [DEFAULT]
 ignoreip = 127.0.0.1/8 ::1
@@ -63,7 +58,7 @@ maxretry = $MAXRETRY
 $( [ -n "$LOG_PATH" ] && echo "logpath = $LOG_PATH" )
 EOF
 
-    echo "--- 5. 强制重启服务 ---"
+    echo "--- 重启并强制同步参数 ---"
     if [ "$OS" = "Alpine" ]; then
         rc-service fail2ban restart
     else
@@ -71,30 +66,31 @@ EOF
         systemctl restart fail2ban
     fi
 
-    # 核心修复步骤：使用 client 指令强制同步一次参数
-    echo "--- 6. 正在同步内核参数 ---"
+    # 关键修复：强制通过 Client 注入参数，确保 maxretry 立即变为 3
     sleep 2
-    fail2ban-client set sshd bantime $BANTIME >/dev/null
-    fail2ban-client set sshd maxretry $MAXRETRY >/dev/null
+    fail2ban-client set sshd bantime $BANTIME >/dev/null 2>&1
+    fail2ban-client set sshd maxretry $MAXRETRY >/dev/null 2>&1
 
     echo "------------------------------------------------"
-    echo "✅ 修复完成！"
-    echo "当前实时生效参数："
-    echo " - 封禁时长: $(fail2ban-client get sshd bantime) 秒"
-    echo " - 重试次数: $(fail2ban-client get sshd maxretry) 次"
+    echo "✅ 成功！当前生效：封禁 $BANTIME，重试 $MAXRETRY 次。"
     echo "------------------------------------------------"
 }
 
-# --- 其他功能保持不变 ---
+# --- 函数：卸载 ---
 uninstall_f2b() {
-    echo "⚠️  即将彻底删除 Fail2Ban。"
+    echo "⚠️  警告：即将彻底删除 Fail2Ban。"
     read -p "确认继续？(y/n): " confirm
     [[ "$confirm" != "y" ]] && return
     fail2ban-client stop >/dev/null 2>&1
     if [ "$OS" = "Alpine" ]; then
-        rc-service fail2ban stop && rc-update del fail2ban default && apk del fail2ban
+        rc-service fail2ban stop
+        rc-update del fail2ban default
+        apk del fail2ban
     else
-        systemctl stop fail2ban && systemctl disable fail2ban && apt purge -y fail2ban && apt autoremove -y
+        systemctl stop fail2ban
+        systemctl disable fail2ban
+        apt purge -y fail2ban
+        apt autoremove -y
     fi
     rm -rf /etc/fail2ban /var/lib/fail2ban
     echo "✅ 已彻底移除。"
@@ -111,11 +107,14 @@ echo " 3. 查看实时日志 (Ctrl+C 退出)"
 echo " 4. 彻底删除 (卸载) Fail2Ban"
 echo " 5. 退出脚本"
 echo "=========================================="
-read -p "选择: " choice
+read -p "请选择 [1-5]: " choice
+
 case $choice in
     1) install_f2b ;;
-    2) fail2ban-client status sshd ;;
+    2) echo "--- 当前 SSH 封禁状态 ---"
+       fail2ban-client status sshd ;;
     3) tail -f /var/log/fail2ban.log ;;
     4) uninstall_f2b ;;
-    *) exit 0 ;;
+    5) exit 0 ;;
+    *) echo "无效选择";;
 esac
