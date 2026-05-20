@@ -20,3 +20,7 @@ chmod +x install-fail2ban.sh \
 wget https://raw.githubusercontent.com/luptnn/lrcs/refs/heads/main/socks5.sh \
 chmod +x socks5.sh \
 ./socks5.sh
+
+四、uninstall-nezha-agent.sh
+chmod +x /tmp/uninstall-nezha-agent.sh \
+./uninstall-nezha-agent.sh
